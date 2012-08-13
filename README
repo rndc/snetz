@@ -1,0 +1,29 @@
+#################################################################
+#
+# snetz.py -- Simple Banwidth Monitoring.
+# Abi <l0g.bima@gmail.com>
+#
+# http://projects.gxrg.org
+# http://rndc.or.id
+#
+################################################################
+
+You'll need:
+        Python 
+        The dev pseudo-file, in linux machine at "/proc/net/dev"
+
+How to:
+
+- Install
+
+python Setup.py
+
+- Remove 
+
+python Remove.py
+
+Thanks to:
+
+g0wal as inspired me :D
+RNDC (Indonesia Research and Development Center)
+and others

@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 #
-#  snetz.py 0.1 - simple bandwidth monitoring tool
+#  snetz.py 0.2 - simple bandwidth monitoring tool
 #  Author by Agus Bimantoro  <l0g.bima@gmail.com> (http://rndc.or.id, http://abi71.wordpress.com) 
 #
 #  This program is free software; you can redistribute it and/or modify
@@ -19,7 +19,7 @@
 #  MA 02110-1301, USA.
 #
 
-__version__ = "0.1"
+__version__ = "0.2"
 __author__ = "Agus Bimantoro"
 __site__ = "http://rndc.or.id/wiki"
 
@@ -34,8 +34,11 @@ SOCK = socket(AF_INET, SOCK_DGRAM)
 SIOCGIFFLAGS = 0x8913
 IFF_UP = 0x1 
 IFF_LOOP_BACK = "lo"   
-DELAY_TIME = 1.5
+DELAY_TIME = 1
 FILE_PATH = "/proc/net/dev"
+UNIT_RATE = "Kb"
+UNIT_RATE_ALLOWED = ["Kb","Mb","KB","MB"]
+INTERFACES = ["all"]
 
 class snetz(object):
 	def __init__(self, delay, path):
@@ -43,8 +46,8 @@ class snetz(object):
 		self.delay = delay
 		self.path = path
 		
-		if (self.delay < 1):
-			sys.stderr.write("TimeError: %s: Minimal 1 seconds.\n" % (self.delay))
+		if (self.delay < 0.500):
+			sys.stderr.write("TimeError: %s: Minimal 0.500 seconds.\n" % (self.delay))
 			sys.exit(1)
 			
 		if not (os.path.exists(self.path)):
@@ -53,7 +56,6 @@ class snetz(object):
 	
 	def check_if_up(self, iface):
 		""" check whether the interface is up """
-		
 		ifreq = struct.pack('16sh', iface, 0)
 		flags = struct.unpack('16sh', fcntl.ioctl(SOCK.fileno(), SIOCGIFFLAGS, ifreq))[1]
 		
@@ -63,12 +65,43 @@ class snetz(object):
 			return True		
 		else:
 			return False
+	
+	def get_if_all(self):
+		""" get all interfaces """
+		ifaces = []
+	
+		for line in open(FILE_PATH):
+			dev = line.split()[0].split(':')[0]
+			ifaces.append(dev)
+			
+		ifaces.pop(0)
+		ifaces.pop(0)
+		
+		return ifaces
 
 	def convert_byte_to_kbits(self, new_bytes, old_bytes, diff_times):
-		""" convert byte to kilobits """
+		""" convert bytes to kilobits """
 		kbits = (((new_bytes - old_bytes) * 8)/1000)/diff_times
 		kbits = '%.2f' % kbits
 		return float(kbits)
+	
+	def convert_byte_to_mbits(self, new_bytes, old_bytes, diff_times):
+		""" convert bytes to megabits """
+		mbits = (((new_bytes - old_bytes) * 8)/1000000)/diff_times
+		mbits = '%.2f' % mbits
+		return float(mbits)
+		
+	def convert_byte_to_kbytes(self, new_bytes, old_bytes, diff_times):
+		""" convert bytes to kilobytes """
+		kbytes = ((new_bytes - old_bytes)/1024)/diff_times
+		kbytes = '%.2f' % kbytes
+		return float(kbytes)
+	
+	def convert_byte_to_mbytes(self, new_bytes, old_bytes, diff_times):
+		""" convert bytes to megabytes """
+		mbytes = (((new_bytes - old_bytes)/1024)/1024)/diff_times
+		mbytes = '%.2f' % mbytes
+		return float(mbytes)
 
 	def get_bytes(self, iface, data):
 		""" get byte and packets """
@@ -86,6 +119,13 @@ class snetz(object):
 		interface = []
 		first_run = True
 		
+		# check the available interfaces
+		if (INTERFACES[0] != "all"):
+			for line in INTERFACES:
+				if (line not in self.get_if_all()):
+					sys.stderr.write("ValueError: %s: No such device.\n" % (line))
+					sys.exit(1)
+		
 		# read all interface and give zero value to data variables
 		#
 		# rxbn = rx bytes new
@@ -100,8 +140,12 @@ class snetz(object):
 		for line in open(self.path, 'r'):
 			if (':' in line):
 				iface = line.split(':')[0].lstrip(' ')
-				iface = {iface: {'rxbn': 0,'rxbo': 0,'txbn': 0,'txbo': 0,'prevtime': 0.0,'curtime': 0.0}}
-				interface.append(iface)
+				if (INTERFACES[0] == "all"):
+					iface = {iface: {'rxbn': 0,'rxbo': 0,'txbn': 0,'txbo': 0,'prevtime': 0.0,'curtime': 0.0}}
+					interface.append(iface)
+				elif (iface in INTERFACES):
+					iface = {iface: {'rxbn': 0,'rxbo': 0,'txbn': 0,'txbo': 0,'prevtime': 0.0,'curtime': 0.0}}
+					interface.append(iface)					
   
 		while True:	
 			total_all_rx = 0
@@ -114,8 +158,9 @@ class snetz(object):
 			os.system("clear")
 			
 			print("\nSNETZ - simple bandwidth monitoring tool (%s)\n" % (__site__))
+			print("Refresh Time: %s  Unit Rate: %s\n" % (DELAY_TIME,UNIT_RATE))
 			print("  =========================================================================")
-			print("  %-15s%-17s%-17s%-18s%s" % ("Interface","RX(Kbit/sec)","TX(Kbit/sec)","Total(Kbit/sec)","Status"))
+			print("  %-15s%-17s%-17s%-18s%s" % ("Interface","RX(%s/sec)" % UNIT_RATE,"TX(%s/sec)" % UNIT_RATE,"Total(%s/sec)" % UNIT_RATE,"Status"))
 			print("  =========================================================================")
 			
 			for data in interface:
@@ -126,14 +171,28 @@ class snetz(object):
 				
 				# RX
 				if (data[iface]['rxbn']  > data[iface]['rxbo']):
-					rx = self.convert_byte_to_kbits(data[iface]['rxbn'], data[iface]['rxbo'], diff_time)
+					if (UNIT_RATE == "Kb"):
+						rx = self.convert_byte_to_kbits(data[iface]['rxbn'], data[iface]['rxbo'], diff_time)
+					elif (UNIT_RATE == "Mb"):
+						rx = self.convert_byte_to_mbits(data[iface]['rxbn'], data[iface]['rxbo'], diff_time)
+					elif (UNIT_RATE == "KB"):
+						rx = self.convert_byte_to_kbytes(data[iface]['rxbn'], data[iface]['rxbo'], diff_time)
+					else:
+						rx = self.convert_byte_to_mbytes(data[iface]['rxbn'], data[iface]['rxbo'], diff_time)
 					data[iface]['rxbo'] = data[iface]['rxbn']
 				else:
 					rx = 0
 			
 				# TX
 				if (data[iface]['txbn']  > data[iface]['txbo']):
-					tx = self.convert_byte_to_kbits(data[iface]['txbn'], data[iface]['txbo'], diff_time)
+					if (UNIT_RATE == "Kb"):
+						tx = self.convert_byte_to_kbits(data[iface]['txbn'], data[iface]['txbo'], diff_time)
+					elif (UNIT_RATE == "Mb"):
+						tx = self.convert_byte_to_mbits(data[iface]['txbn'], data[iface]['txbo'], diff_time)
+					elif (UNIT_RATE == "KB"):
+						tx = self.convert_byte_to_kbytes(data[iface]['txbn'], data[iface]['txbo'], diff_time)
+					else:
+						tx = self.convert_byte_to_mbytes(data[iface]['txbn'], data[iface]['txbo'], diff_time)
 					data[iface]['txbo'] = data[iface]['txbn']
 				else:
 					tx = 0
@@ -183,14 +242,18 @@ def manual():
 	print("SNETZ %s by %s - simple bandwidth monitoring tool (%s)\n" % (__version__, __author__,__site__))
 	print("Usage: snetz <options>") 
 	print("Options:") 
-	print("    -h, --help\t   Display this help.")
-	print("    -t, --time\t   Update display time/sec, defaults to 1.5 seconds if not specified.")
-	print("    -p, --path\t   The path of  network device status information,")
-	print("     \t\t   Filename defaults to '/proc/net/dev' if not specified.")
-	print("    -l, --license  Display software license.")
-	print("    -v, --version  Display version number.")
+	print("    -h, --help                Display this help")
+	print("    -t, --time <float>        Update display time/sec, defaults to 1 seconds if not specified")
+	print("    -p, --path <path>         The path of  network device status information,")
+	print("                              Filename defaults to '/proc/net/dev' if not specified")
+	print("    -u, --unit <Kb/Mb/KB/MB>  Display output rate (Kb/Mb/KB/MB), the default units is Kbps")
+	print("    -i, --interfaces <list>   Display only specified interfaces, the seperated list by comma")
+	print("    -l, --license             Display software license")
+	print("    -v, --version             Display version number")
 	print("\nEx: snetz ")
-	print("    snetz -t 2 -p /proc/net/dev\n")
+	print("    snetz -u KB")
+	print("    snetz -t 1.5 -p /proc/net/dev -u Kb")
+	print("    snetz -u Mb -i eth0,eth1,eth2,eth3\n")
 	print("Please report bugs to <l0g.bima@gmail.com>")
 	sys.exit(0)
 
@@ -209,10 +272,21 @@ if (__name__ == "__main__"):
 				DELAY_TIME = float(sys.argv[int(sys.argv[1:].index(arg))+2])   
 			if (arg.lower() == "-p" or arg.lower() == "--path"):
 				FILE_PATH =  str(sys.argv[int(sys.argv[1:].index(arg))+2])
+			if (arg.lower() == "-u" or arg.lower() == "--unit"):
+				UNIT_RATE =  str(sys.argv[int(sys.argv[1:].index(arg))+2])
+			if (arg.lower() == "-i" or arg.lower() == "--interfaces"):
+				ifaces =  str(sys.argv[int(sys.argv[1:].index(arg))+2])
+				INTERFACES.remove("all")
+				for i in ifaces.split(","):
+					INTERFACES.append(i)
+				del(ifaces)
 			if (arg.lower() == "-l" or arg.lower() == "--license"):
 				license()
 			if (arg.lower() == "-v" or arg.lower() == "--version"):
-				version()
+				version()		
+		if (UNIT_RATE not in UNIT_RATE_ALLOWED):
+			sys.stderr.write("ValueError: %s: Uknown unit rate, value must be in (Kb,Mb,KB,MB).\n" % (UNIT_RATE))
+			sys.exit(1)
 	except ValueError:
 		if (DELAY_TIME):
 			sys.stderr.write("ValueError: %s: Update time must be integer.\n" % (sys.argv[int(sys.argv[1:].index(arg))+2]))

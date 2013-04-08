@@ -5,3 +5,9 @@
           * Public Released. 
           * Hosting on sourceforge.net, The url projects at http://sourceforge.net/projects/snetz
           * Development page at https://github.com/rndc/snetz/
+      
+      Snetz (0.2)
+
+          * Changed default timeout
+          * Added option rate units and list the specified interfaces
+          * Updated manual page
